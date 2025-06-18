@@ -1,2 +1,1 @@
-# cs224r-final-project
-"CS224R: Deep Reinforcement Learning" Final Project
+# [CS224R: Deep Reinforcement Learning](https://cs224r.stanford.edu/) Final Project
