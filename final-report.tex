@@ -44,42 +44,15 @@
 
 \begin{document}
 
-% ============================================================================
-% PART 1: ONE-PAGE EXTENDED ABSTRACT
-% ============================================================================
-\begin{titlepage}
-\begin{center}
-\Large\textbf{Extended Abstract}
-\end{center}
-\vspace{10pt}
-
-\paragraph{Motivation} Despite their general capabilities, Large Language Models (LLMs) struggle with multi-step numerical reasoning tasks. The Countdown puzzle exemplifies this challenge, requiring models to combine integers using arithmetic operations to exactly reach a target integer. Even state of the art small instruction-tuned models like \texttt{Qwen2.5-0.5B-Instruct} achieve 0\% accuracy on our Countdown benchmark, necessitating specialized fine-tuning to develop these reasoning capabilities. While REINFORCE Leave-One-Out (RLOO) offers an efficient alternative to PPO for such specialized fine-tuning, it suffers from sparse rewards when models rarely generate correct solutions. This creates a vicious cycle: RLOO cannot estimate meaningful advantage baselines without correct samples, preventing the model from improving. We propose Adaptive-Temperature Ladder Sampling (ATLaS) to break this cycle by more systematically exploring the solution space.
-
-\paragraph{Method} ATLaS extends RLOO by introducing an adaptive temperature control mechanism that activates when initial sampling fails to produce a correct solution. The algorithm operates in a ladder fashion: starting with a base temperature $\tau_0$, it incrementally increases temperature by $\Delta\tau$ up to $M$ attempts while the number of correct samples for a given prompt is below a threshold $C_{min}$. Unlike fixed high-temperature sampling, ATLaS maintains low temperatures when the model performs well, preserving sample quality while pursuing signal for more difficult problems. The integration with RLOO's multi-sample advantage requires only modification of the sampling phase while preserving the core variance reduction benefits.
-
-\paragraph{Implementation} We implement ATLaS within a custom RLOO training framework. Our implementation efficiently resamples only prompts lacking a correct solution, minimizing computational overhead. Key hyperparameters tested in our experiments: base temperature $\tau_0=0.7$, increment $\Delta\tau=0.1$, maximum attempts $M=3$, and minimum correct samples $C_{min}=1$. 
-
-\paragraph{Results} On our Countdown benchmark, the RLOO model trained with ATLaS achieves 0.683 score compared to 0.647 for vanilla RLOO, representing an 8.4\% relative improvement in a single-run evaluation. Analysis reveals that 37.9\% of prompts initially lack correct solutions (noting that our strong SFT baseline already achieves a 0.406 score , so rewards are not truly sparse). ATLaS successfully recovers 11.4\% of these through temperature adaptation. Due to computational constraints limiting us to single runs, these results should be considered preliminary findings requiring validation through repeated experiments to establish statistical significance.
-
-\paragraph{Discussion} ATLaS demonstrates that simple algorithmic modifications can help address challenges in RL-based LLM fine-tuning. While our evaluation focuses on Countdown tasks, the approach generalizes to any online sparse-reward scenario where increased sampling diversity can reveal solution paths. Future work could explore dynamic sample size adjustment and application to broader mathematical reasoning benchmarks.
-
-\paragraph{Conclusion} We introduce ATLaS, an adaptive temperature control mechanism that enhances RLOO's effectiveness on sparse-reward tasks. By systematically increasing exploration when needed, ATLaS recovers training signals from previously intractable problems, achieving an 8.4\% relative improvement on our Countdown benchmark. This work demonstrates that addressing the exploration-exploitation trade-off through adaptive sampling can improve RL fine-tuning for challenging reasoning tasks.
-
-\end{titlepage}
-
-% ============================================================================
-% PART 2: MAIN PAPER
-% ============================================================================
-
 \begin{center}
 \rule{\linewidth}{1.5pt}
 \vspace{0.8em}
 
-\raisebox{-0.3em}{\includegraphics[height=1.5em]{ladder.png}}\hspace{0.5em}%
+\raisebox{-0.3em}{\includegraphics[height=1.5em]{images/ladder.png}}\hspace{0.5em}%
 {\Large\bfseries Adaptive Temperature Ladder Sampling (ATLaS) for REINFORCE Leave-One-Out (RLOO) \par}
 \vspace{0.6em}
 
-\textit{A \href{https://cs224r.stanford.edu/material/CS224R_Default_Project_Guidelines.pdf}{default project} for CS 224R: Deep Reinforcement Learning}
+\textit{A \href{https://cs224r.stanford.edu/material/CS224R_Default_Project_Guidelines.pdf}{default project} for CS 224R: Deep Reinforcement Learning}$^\dagger$
 
 \vspace{0.8em}
 \rule{\linewidth}{1.5pt}
@@ -91,23 +64,25 @@ Non-Degree Student, Stanford Center for Global \& Online Education\\[0.3em]
 \texttt{\href{mailto:jonathan.algar@stanford.edu}{jalgar@stanford.edu}}
 \end{center}
 
+\let\thefootnote\relax
+\footnotetext{$^\dagger$\textit{Updated since submission. Last update: \today.}}
 
 \begin{abstract}
-REINFORCE Leave-One-Out (RLOO) offers an efficient alternative to PPO for Large Language Model (LLM) fine-tuning but suffers from sparse rewards in mathematical reasoning tasks where correct solutions are rare. We introduce \textbf{Adaptive-Temperature Ladder Sampling (ATLaS)}, a simple yet effective extension that systematically increases sampling temperature when correct solutions are not found, recovering training signals from previously intractable problems. Our approach uses temperature as an exploration mechanism while maintaining sample quality when the model performs well. On our Countdown benchmark, ATLaS improves the score by a relative 8.4\% over vanilla RLOO by successfully solving 11.4\% of problems that generate zero correct solutions under fixed sampling. This work demonstrates that addressing the exploration-exploitation trade-off through adaptive temperature control can enhance RL-based fine-tuning for challenging reasoning tasks.
+REINFORCE Leave-One-Out (RLOO) offers an efficient alternative to Proximal policy optimization (PPO) for Large Language Model (LLM) RL-based fine-tuning but suffers from sparse rewards in mathematical reasoning tasks where correct solutions are rare. We introduce \textbf{Adaptive-Temperature Ladder Sampling (ATLaS)}, a simple yet effective extension that systematically increases sampling temperature when correct solutions are not found, recovering training signals from previously intractable problems. Our approach uses temperature as an exploration mechanism while maintaining sample quality. On our Countdown benchmark, ATLaS improves the score by a relative 8.4\% over vanilla RLOO by successfully solving 11.4\% of problems that generate zero correct solutions under fixed sampling. This work demonstrates that addressing the exploration-exploitation trade-off through adaptive temperature control can enhance RL fine-tuning for challenging reasoning tasks.
 \end{abstract}
 
 \section{Introduction}
-Large Language Models (LLMs) demonstrate remarkable capabilities across diverse tasks, yet continue to struggle with multi-step numerical reasoning problems. The Countdown puzzle exemplifies this challenge: given a small set of integers (for example, \{4, 31, 35, 62\}), the task requires combining them with basic arithmetic operations to exactly reach a target integer (for example, 41). Despite its apparent simplicity, both base and instruction-tuned versions of small models like \texttt{Qwen2.5-0.5B} achieve zero accuracy our Countdown benchmark without specialized fine-tuning.
+LLMs demonstrate remarkable capabilities across diverse tasks, yet continue to struggle with multi-step numerical reasoning problems. The Countdown task exemplifies this challenge: given a small set of integers (for example, \{4, 31, 35, 62\}), the task requires combining them with basic arithmetic operations to exactly reach a target integer (for example, 41). Despite its apparent simplicity, both base and instruction-tuned versions of \texttt{Qwen2.5-0.5B} achieve zero accuracy our Countdown benchmark without specialized fine-tuning.
 
-Reinforcement learning from human feedback (RLHF) has become an important technique for improving LLM capabilities beyond supervised fine-tuning~\cite{ouyang2022training}. Among RL algorithms for LLM fine-tuning, REINFORCE Leave-One-Out (RLOO)~\cite{ahmadian2024back} offers an attractive balance of simplicity and effectiveness, requiring 50-70\% less memory than Proximal Policy Optimization (PPO) while achieving competitive performance. However, RLOO faces a significant limitation when applied to tasks with sparse rewards: without sufficient correct samples to estimate meaningful advantage baselines, the algorithm cannot differentiate between attempts of varying quality.
+Reinforcement learning from human feedback (RLHF) has become an important technique for improving LLM capabilities beyond supervised fine-tuning~\cite{ouyang2022training}. Among RL algorithms for LLM fine-tuning, RLOO~\cite{ahmadian2024back} offers an attractive balance of simplicity and effectiveness, requiring 50-70\% less memory than PPO while achieving competitive performance. However, RLOO faces a significant limitation when applied to tasks with sparse rewards. Without sufficient correct samples to estimate meaningful advantage baselines, the algorithm cannot differentiate between attempts of varying quality.
 
-In this work, we propose Adaptive-Temperature Ladder Sampling (ATLaS), a simple modification to RLOO that addresses the sparse reward challenge through intelligent exploration. Our key insight is that temperature control in language model sampling can serve as an effective exploration mechanism: while low temperatures preserve high-quality samples when the model performs well, strategically increasing temperature when correct solutions are absent can reveal previously hidden solution paths.
+In this work, we propose Adaptive-Temperature Ladder Sampling (ATLaS), a simple modification to RLOO that addresses the sparse reward challenge through intelligent exploration. The key insight is that temperature control in sampling can serve as an effective exploration mechanism. While low temperatures preserve high-quality samples when the model performs well, strategically increasing temperature when correct solutions are absent can reveal previously hidden solution paths.
 
 \section{Related work}
 
 \subsection{Supervised Fine-Tuning (SFT)}
 
-Supervised fine-tuning forms the foundation for subsequent RL-based methods. The standard RLHF pipeline begins with SFT on high-quality demonstrations~\cite{ouyang2022training}, which proves particularly important for mathematical reasoning tasks. Recent work by ~\cite{dong2023abilities} shows that mathematical capabilities improve consistently with increasing data quantity, though general abilities plateau after approximately 1000 examples. This highlights the importance of specialized datasets for mathematical tasks.
+Supervised fine-tuning forms the foundation for subsequent RL fine-tuning methods. The standard RLHF pipeline begins with SFT on high-quality demonstrations~\cite{ouyang2022training}, which proves particularly important for mathematical reasoning tasks. Recent work by ~\cite{dong2023abilities} shows that mathematical capabilities improve consistently with increasing data quantity, though general abilities plateau after approximately 1000 examples. This highlights the importance of specialized datasets for mathematical tasks.
 
 \subsection{REINFORCE Leave-One-Out (RLOO)}
 
@@ -182,7 +157,7 @@ Several design choices in ATLaS merit explanation:
 
 \textbf{Prompt level adaptation}: Temperature adaptation occurs per prompt rather than per batch or globally. This allows the algorithm to adapt to varying problem difficulties within a single batch.
 
-\textbf{Early stopping}: Once sufficient correct samples are found, we stop increasing temperature. This preserves sample quality for problems the model can already solve.
+\textbf{Early stopping}: Once sufficient correct samples are found, we stop increasing the temperature. This preserves sample quality for problems the model can already solve.
 
 \textbf{Fixed sample size}: We maintain $K$ samples regardless of temperature, ensuring consistent advantage estimation across all prompts.
 
@@ -222,22 +197,22 @@ We fine-tune \texttt{Qwen/Qwen2.5-0.5B} on the \texttt{\href{https://huggingface
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.8\columnwidth]{sft.png}
+  \includegraphics[width=0.8\columnwidth]{images/sft.png}
   \vspace{-10pt}
   \caption*{\href{https://wandb.ai/jonathanalgar/cs224r-project-sft-baseline/runs/d6osiygw/panel/w5ubogq9o}{(Click for interactive data)}}
 \end{figure}
 
 \subsubsection{Our Countdown benchmark}
 
-We evaluate using the \texttt{compute\_score} function from ~\cite{gandhi2025cognitive} over 100 samples from a synthetic validation set\footnote{CS224R Methodological note: half the examples from the \textit{original} test set which was replaced as leaderboard evaluator before we trained this model i.e. we made an \texttt{Instruction Following} submission to the project milestone leaderboard.}. We then select the checkpoint with highest average score for \texttt{temperature=0.1} (=step 1800) as $\pi_{\theta}$ for RLOO training. For full training detail and experiment logs, see the \href{https://wandb.ai/jonathanalgar/cs224r-project-sft-baseline/runs/d6osiygw/overview}{W\&B run overview}.
+We evaluate using the \href{https://github.com/kanishkg/cognitive-behaviors/blob/9c90d333c6e3b5eafe801cb4cadd5ee973cc8291/verl/utils/reward_score/countdown.py#L59}{\texttt{compute\_score} function} from ~\cite{gandhi2025cognitive} over 100 samples from a synthetic validation set\footnote{CS224R Methodological note: half the examples from the \textit{original} test set which was replaced as leaderboard evaluator before we trained this model i.e. we made an \texttt{Instruction Following} submission to the project milestone leaderboard.}. We then select the checkpoint with best average score for \texttt{temperature=0.1} (=step 1800) as $\pi_{\theta}$ for RLOO training. For full training detail and experiment logs, see the \href{https://wandb.ai/jonathanalgar/cs224r-project-sft-baseline/runs/d6osiygw/overview}{W\&B run overview}.
 
-\textbf{Important note}: Our SFT baseline achieves a 0.406 score on our Countdown benchmark, which is remarkably strong compared to the base model it was trained on. This means we are not operating in a truly sparse reward regime, as well over one-third of generated samples receive positive rewards even before RL fine-tuning. This strong starting point may underestimate the benefits of ATLaS compared to scenarios with genuinely sparse rewards.
+\textbf{Important note}: Our SFT baseline achieves a 0.406 score on our Countdown benchmark, which is remarkably strong compared to the base model. This means we are not operating in a truly sparse reward regime, as well over one-third of generated samples receive positive rewards even before RL fine-tuning. This strong starting point may underestimate the benefits of ATLaS compared to scenarios with genuinely sparse rewards.
 
 \subsection{RLOO training}
 
 For our RLOO training procedure we construct prompts (template as \texttt{\href{https://huggingface.co/datasets/Asap7772/cog_behav_all_strategies}{cog\_behav\_all\_strategies}}) from the \texttt{\href{https://huggingface.co/datasets/Jiayi-Pan/Countdown-Tasks-3to4}{Countdown-Tasks-3to4}} binary dataset (train split, \texttt{seed=42} for reproducibility). For each gradient step we sample $K=20$ candidate completions per prompt with a batch size of 8 (selected for computational feasibility). We make a fixed 101 gradient steps for the run. We use a AdamW optimizer with learning rate $\alpha = 1e^{-5}$ and KL penalty coefficient $\beta = 0$.
 
-These are the common hyperparameters and configuration for our RLOO train runs. We want to evaluate vanilla RLOO versus RLOO+ATLAS. The configuration for the ATLaS algorithm in our experimental setup: 
+These are the common hyperparameters and configuration for our RLOO train runs. We want to evaluate vanilla RLOO versus RLOO+ATLaS. The configuration for the ATLaS algorithm in our experimental setup:
 
 \begin{itemize}
     \item Base temperature $\tau_0 = 0.7$
@@ -269,14 +244,14 @@ Vanilla RLOO & 0.647 & 1.0x & \\
 
 \begin{figure}[h]
   \centering
-  \includegraphics[width=0.8\columnwidth]{rloocomp.png}
+  \includegraphics[width=0.8\columnwidth]{images/rloocomp.png}
   \vspace{-10pt}
   \caption*{\href{https://wandb.ai/jonathanalgar/countdown-rl-prod/workspace/panel/etxgwewfv}{(Click for interactive data)}}
 \end{figure}
 
-ATLaS achieves a modest \textbf{8.4\% relative improvement in best average score over vanilla RLOO.} The computational cost is significant, with a 1.57x relative increase in train time.
+ATLaS achieves a modest \textbf{8.4\% relative improvement in best average score over vanilla RLOO.} The computational cost is significant, with a 1.57x increase in train time.
 
-\textbf{Important caveat}: Due to computational budget constraints, we conducted only one training run for each method. This prevents us from establishing statistical significance or confidence intervals for the reported improvements. The observed relative improvement, while encouraging, should be interpreted as a preliminary finding requiring validation through multiple independent runs.
+\textbf{Important note}: Due to computational budget constraints, we conducted only one train run for each method. This prevents us from establishing statistical significance or confidence intervals for the reported improvements. Then the observed relative improvement, while encouraging, should be interpreted as a preliminary finding requiring validation through multiple independent runs.
 
 \subsection{Resampling}
 
@@ -284,7 +259,7 @@ For the \textbf{RLOO+ATLaS} run we find that of the 808 prompt (8 x 101 steps) s
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.8\columnwidth]{correct.png}
+  \includegraphics[width=0.8\columnwidth]{images/correct.png}
   \vspace{-10pt}
   \caption*{\href{https://wandb.ai/jonathanalgar/countdown-rl-prod/workspace/panel/qbxudix1v}{(Click for interactive data)}}
 \end{figure}
@@ -303,9 +278,11 @@ There are several promising avenues for further research:
 
 \section{Conclusion}
 
-\textit{(Duplicated from extended abstract)} We introduce ATLaS, an adaptive temperature control mechanism that enhances RLOO's effectiveness on sparse-reward tasks. By systematically increasing exploration when needed, ATLaS recovers training signals from previously intractable problems, achieving an 8.4\% relative improvement on our Countdown benchmark. This work demonstrates that addressing the exploration-exploitation trade-off through adaptive sampling can improve RL fine-tuning for challenging reasoning tasks.
+We introduce ATLaS, an adaptive temperature control mechanism that enhances RLOO's effectiveness on sparse-reward tasks. By systematically increasing exploration when needed, ATLaS recovers training signals from previously intractable problems, achieving an 8.4\% relative improvement on our Countdown benchmark. This work demonstrates that addressing the exploration-exploitation trade-off through adaptive sampling can improve RL fine-tuning for challenging reasoning tasks.
 
-\paragraph{Changes from Proposal} Significant. We faced challenges with the base implementation of RLOO and its stability, so we decided to focus on an extension that does not require modifying the advantage calculation.
+\subsection{Changes from proposal}
+
+Significant. We faced challenges with the base implementation of RLOO and its stability, so we decided to focus on an extension that does not require modifying the advantage calculation.
 
 \bibliographystyle{ACM-Reference-Format}
 \bibliography{reference}
